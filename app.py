@@ -18,50 +18,58 @@ def load_data(ticker, period, interval):
 
 data = load_data(ticker, period, interval)
 
-# Calculate RSI
-delta = data["Close"].diff()
-gain = (delta.where(delta > 0, 0)).rolling(14).mean()
-loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
-rs = gain / loss
-data["RSI"] = 100 - (100 / (1 + rs))
+if data.empty:
+    st.error("⚠️ No data returned. Please check the ticker and time range.")
+    st.stop()
 
-# Calculate MACD
-exp1 = data["Close"].ewm(span=12, adjust=False).mean()
-exp2 = data["Close"].ewm(span=26, adjust=False).mean()
-data["MACD"] = exp1 - exp2
-data["Signal_Line"] = data["MACD"].ewm(span=9, adjust=False).mean()
+# Calculate indicators
+try:
+    delta = data["Close"].diff()
+    gain = delta.where(delta > 0, 0).rolling(14).mean()
+    loss = -delta.where(delta < 0, 0).rolling(14).mean()
+    rs = gain / loss
+    data["RSI"] = 100 - (100 / (1 + rs))
 
-# Remove rows with NaN values (typically the first 26 rows)
-data = data.dropna(subset=["RSI", "MACD", "Signal_Line"])
+    exp1 = data["Close"].ewm(span=12, adjust=False).mean()
+    exp2 = data["Close"].ewm(span=26, adjust=False).mean()
+    data["MACD"] = exp1 - exp2
+    data["Signal_Line"] = data["MACD"].ewm(span=9, adjust=False).mean()
 
-# Define Buy/Sell Signal logic
-def signal(row):
-    if row["RSI"] < 30 and row["MACD"] > row["Signal_Line"]:
-        return "BUY"
-    elif row["RSI"] > 70 and row["MACD"] < row["Signal_Line"]:
-        return "SELL"
-    else:
-        return "HOLD"
+    # Check columns exist before dropping NaNs
+    required_cols = ["RSI", "MACD", "Signal_Line"]
+    for col in required_cols:
+        if col not in data.columns:
+            st.error(f"Missing column: {col}")
+            st.stop()
 
-# Apply Signal
-data["Signal"] = data.apply(signal, axis=1)
+    data = data.dropna(subset=required_cols)
 
-# Display Signal
-st.metric("💡 Latest Signal", data["Signal"].iloc[-1])
-st.write("Latest Technicals:")
-st.dataframe(data[["Close", "RSI", "MACD", "Signal_Line", "Signal"]].tail(5))
+    def signal(row):
+        if row["RSI"] < 30 and row["MACD"] > row["Signal_Line"]:
+            return "BUY"
+        elif row["RSI"] > 70 and row["MACD"] < row["Signal_Line"]:
+            return "SELL"
+        else:
+            return "HOLD"
 
-# Candlestick + MACD Plot
-fig = go.Figure()
-fig.add_trace(go.Candlestick(
-    x=data.index, open=data['Open'], high=data['High'],
-    low=data['Low'], close=data['Close'], name='Price'
-))
-fig.add_trace(go.Scatter(
-    x=data.index, y=data["MACD"], name='MACD', line=dict(color='blue')
-))
-fig.add_trace(go.Scatter(
-    x=data.index, y=data["Signal_Line"], name='Signal Line', line=dict(color='orange')
-))
-fig.update_layout(title=f'{ticker} Price & MACD Signals', height=600)
-st.plotly_chart(fig, use_container_width=True)
+    data["Signal"] = data.apply(signal, axis=1)
+
+    st.metric("💡 Latest Signal", data["Signal"].iloc[-1])
+    st.dataframe(data[["Close", "RSI", "MACD", "Signal_Line", "Signal"]].tail(5))
+
+    fig = go.Figure()
+    fig.add_trace(go.Candlestick(
+        x=data.index, open=data['Open'], high=data['High'],
+        low=data['Low'], close=data['Close'], name='Price'
+    ))
+    fig.add_trace(go.Scatter(
+        x=data.index, y=data["MACD"], name='MACD', line=dict(color='blue')
+    ))
+    fig.add_trace(go.Scatter(
+        x=data.index, y=data["Signal_Line"], name='Signal Line', line=dict(color='orange')
+    ))
+    fig.update_layout(title=f'{ticker} Price & MACD Signals', height=600)
+    st.plotly_chart(fig, use_container_width=True)
+
+except Exception as e:
+    st.error(f"⚠️ Error in processing: {e}")
