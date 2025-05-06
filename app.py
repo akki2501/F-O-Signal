@@ -31,7 +31,10 @@ exp2 = data["Close"].ewm(span=26, adjust=False).mean()
 data["MACD"] = exp1 - exp2
 data["Signal_Line"] = data["MACD"].ewm(span=9, adjust=False).mean()
 
-# Buy/Sell Signal Logic
+# Remove rows with NaN values (typically the first 26 rows)
+data = data.dropna(subset=["RSI", "MACD", "Signal_Line"])
+
+# Define Buy/Sell Signal logic
 def signal(row):
     if row["RSI"] < 30 and row["MACD"] > row["Signal_Line"]:
         return "BUY"
@@ -40,9 +43,10 @@ def signal(row):
     else:
         return "HOLD"
 
+# Apply Signal
 data["Signal"] = data.apply(signal, axis=1)
 
-# Show Signal
+# Display Signal
 st.metric("💡 Latest Signal", data["Signal"].iloc[-1])
 st.write("Latest Technicals:")
 st.dataframe(data[["Close", "RSI", "MACD", "Signal_Line", "Signal"]].tail(5))
@@ -61,4 +65,3 @@ fig.add_trace(go.Scatter(
 ))
 fig.update_layout(title=f'{ticker} Price & MACD Signals', height=600)
 st.plotly_chart(fig, use_container_width=True)
-
